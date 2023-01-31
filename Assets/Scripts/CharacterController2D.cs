@@ -20,11 +20,13 @@ public class CharacterController2D : MonoBehaviour
     private RaycastHit2D[] _raycastHits = new RaycastHit2D[3];
     private Vector2[] _raycastPos = new Vector2[3];
 
-    public GroundType groundType;  // Used to report back what kind of ground the player is standing on
-    public bool playerHitsGroundOnFrame; // Boolean that gets set to true the exact frame that we hit the ground
-    public bool somethingBelow; // If true there is something below us if false then there is nothing below
+    public GroundType groundType;            // Used to report back what kind of ground the player is standing on
+    public bool playerHitsGroundOnFrame;     // Boolean that gets set to true the exact frame that we hit the ground
+    public bool playerhitWallOnFrame;        // Boolean that gets set to true the exat frame the player hits a wall
+    public bool somethingBelow;              // If true there is something below us if false then there is nothing below
     private bool _disableGroundCheck;
     private bool _lastFrameInAir;
+    private bool _noSideCollisionsOnLastFrame;
 
 
 
@@ -54,7 +56,10 @@ public class CharacterController2D : MonoBehaviour
     // FixedUpdate is tied to physics simulations, it only runs a set number of times per second
     void Update()
     {
+
         _lastFrameInAir = !somethingBelow;
+
+        _noSideCollisionsOnLastFrame = (!contactRight && !contactLeft);
 
         _lastPos = _rigigbody.position;         //Where the player is at the start of the loop/begginig of the frame
 
@@ -86,20 +91,29 @@ public class CharacterController2D : MonoBehaviour
 
         CheckOtherContacts();
 
-        if(somethingBelow && _lastFrameInAir)
-        {
-            playerHitsGroundOnFrame= true;
+        if(somethingBelow && _lastFrameInAir)                                   // This code is to determine the exact frame where
+        {                                                                       // the player hit the ground
+
+            playerHitsGroundOnFrame = true;
         }
         else
         {
             playerHitsGroundOnFrame= false;
         }
 
-       
+        if((contactLeft || contactRight) && _noSideCollisionsOnLastFrame)       // This code is to determine the exact frame where
+        {                                                                       // the player hit a wall
 
-        
+            playerhitWallOnFrame = true;
+
+        }
+        else
+        {
+            playerhitWallOnFrame = false;
+        }
+
+
     }
-
 
 
     //  Move method will be called by Update loop
