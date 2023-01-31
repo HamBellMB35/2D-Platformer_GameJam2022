@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -11,7 +12,10 @@ public class PlayerController : MonoBehaviour
     public bool isWallJumping;
     public bool isDoubleJumping;
     public bool isTripleJumping;
-
+    public bool isRuningUpWall;
+    public bool isSlidingDownAWall;
+    public bool isCrouching;
+    public bool isCrouchingandMoving;
 
     [Header("Player Abilities")]
 
@@ -19,51 +23,59 @@ public class PlayerController : MonoBehaviour
     public bool canJumpAfterWalljump;
     public bool canDoubleJump;
     public bool canTripleJump;
+    public bool canRunUpWall;
+    public bool canRunUpManyWalls;
+    public bool canSlideDownWalls;
 
 
     [Header("Player Properties")]
 
+    public float upWalldistance = 8f;
     public float wallJumpX = 15f;
     public float wallJumpY = 15f;
+    public float wallSlideDownDistance = 0.11f;
     public float gravity = 20f;
     public float jumpSpeed = 15f;
     public float extraJumpSpeed = 10f;
     public float walkspeed = 10f;
+    public float crouchingMoveSpeed = 5f;
     
 
     [Header("Input flags")]
 
     private bool _jumpButtonPressed;
     private bool _jumpButtonReleased;
-
+    private bool _RunUpWallEnabled = true;
 
     private CharacterController2D _characterController;  
+    private CapsuleCollider2D _capsuleCollider;
+    private Vector2 _initialCapsulecolliderSize;          // Reference to the original collider size is stored as a vector 2
     private Vector2 _input;                               // What we receive from our input system
                                                           // that will be translated into a moveDirection( see next line below)
     private Vector2 _moveDirection;
+    private SpriteRenderer _spriteRenderer;                // Remove when not needed
 
 
     void Start()
     {
-
+        _capsuleCollider = gameObject.GetComponent<CapsuleCollider2D>();
+        _spriteRenderer = gameObject.GetComponent<SpriteRenderer>();
         _characterController = gameObject.GetComponent<CharacterController2D>();
-
+        _initialCapsulecolliderSize = _capsuleCollider.size;
     }
 
     void Update()
     {
-
+        
         //Debug.Log("Force on y is " + _moveDirection.y);
 
         if(!isWallJumping)
         {
-
             _moveDirection.x = _input.x;
             _moveDirection.x *= walkspeed;
 
             if (_moveDirection.x < 0)                        // Conditional to make the player face direction based on input
             {
-
                 transform.rotation = Quaternion.Euler(0f, 180f, 0f);
 
             }
@@ -74,15 +86,17 @@ public class PlayerController : MonoBehaviour
             }
         }
 
-
         if (_characterController.somethingBelow)        // Player is on the ground layerMask
         {
+                                                        
             _moveDirection.y = 0f;                     // Prevens downward force from accumulating once we jump from a plataform
-            isJumping = false;
+                                                
+            isJumping = false;                          // Booleans for air abilities
             isWallJumping= false; 
             isDoubleJumping= false;
             isTripleJumping= false;
         
+            // Jumping parameters
             if(_jumpButtonPressed)
             {
                 
@@ -90,13 +104,74 @@ public class PlayerController : MonoBehaviour
                 isJumping = true;
                 _moveDirection.y = jumpSpeed; 
                 _characterController.DisableCheckIfGrounded();
+                _RunUpWallEnabled = true;
                 
             }
 
+            // Crouching
+            // STEPS:
+            // Change the size of the capsule
+            // Change the position of the capsule a little
+            // Change the sprite *
+
+            if (_input.y < 0)                           
+            {                                           
+
+                if(!isCrouching && !isCrouchingandMoving)
+                {
+                    _capsuleCollider.size = new Vector2(_capsuleCollider.size.x, _capsuleCollider.size.y/2);
+                    transform.position = new Vector2(transform.position.x, transform.position.y - (_initialCapsulecolliderSize.y / 4));
+                    isCrouching= true;
+                    _spriteRenderer.sprite = Resources.Load<Sprite>("directionSpriteUp_crouching");
+                }
+
+            }
+
+            else
+            {
+                if(isCrouching || isCrouchingandMoving)
+                {
+                    RaycastHit2D hitCeling = Physics2D.CapsuleCast(_capsuleCollider.bounds.center, transform.localScale,
+                                             CapsuleDirection2D.Vertical, 0, Vector2.up, _initialCapsulecolliderSize.y/2,
+                                             _characterController.layerMask);
+
+                    if(!hitCeling.collider)
+                    {
+                        _capsuleCollider.size = _initialCapsulecolliderSize;
+                        transform.position = new Vector2(transform.position.x, transform.position.y + (_initialCapsulecolliderSize.y / 4));
+                        _spriteRenderer.sprite = Resources.Load<Sprite>("directionSpriteUp");
+                        isCrouchingandMoving = false;
+                        isCrouching = false;
+
+                    }
+                    
+                }
+            }
+
+            if(isCrouching && _moveDirection.x != 0)
+            {
+                isCrouchingandMoving= true;
+            }
+
+            else
+            {
+                isCrouchingandMoving= false;
+            }
+
         }
+
         else                                            
         // then player is in the air and we need to apply gravity                   
         {
+
+            if((isCrouching || isCrouchingandMoving) && _moveDirection.y > 0)
+            {
+                StartCoroutine("ResetCrouchingState");
+
+            }
+
+
+
             if(_jumpButtonReleased)
             {
                // _jumpButtonPressed = false;
@@ -108,9 +183,8 @@ public class PlayerController : MonoBehaviour
                 }
             }
 
-
             // Double and triple jumping ability code below
-            // Player pressed jump button while in the air
+            // What happens if player pressed jump button while in the air
 
             if(_jumpButtonPressed)
             {
@@ -173,6 +247,38 @@ public class PlayerController : MonoBehaviour
                 _jumpButtonPressed= false;
             }
 
+            // The following code refers to running up walls
+
+            if (canRunUpWall && (_characterController.contactLeft || _characterController.contactRight))
+            {
+                if (_input.y > 0 && _RunUpWallEnabled)
+                {
+                    _moveDirection.y = upWalldistance;
+
+                    if (_characterController.contactLeft)
+                    {
+                        transform.rotation = Quaternion.Euler(0, 180, 0);
+                    }
+
+                    else if (_characterController.contactRight)
+                    {
+                        transform.rotation = Quaternion.Euler(0, 0, 0);
+                    }
+
+                    StartCoroutine("UpWallTimer");
+                }
+            }
+
+            else
+            {
+                if (canRunUpManyWalls)
+                {
+                    StopCoroutine("UpWallTimer");
+                    canRunUpManyWalls = true;
+                    isRuningUpWall = false;
+                }
+            }
+
             CalculateGravity();
         }
 
@@ -191,7 +297,32 @@ public class PlayerController : MonoBehaviour
             _moveDirection.y = 0f;
         }
 
-        _moveDirection.y -= gravity * Time.deltaTime;
+        if(canSlideDownWalls && (_characterController.contactLeft || _characterController.contactRight))
+        {
+
+            if(_characterController.playerhitWallOnFrame) 
+            {
+                _moveDirection.y = 0f;                          // 0s out movedirection on all
+          
+            }
+
+            if(_moveDirection.y <= 0)
+            {
+                _moveDirection.y -= (gravity * wallSlideDownDistance) * Time.deltaTime;
+            }
+
+            else
+            {
+                _moveDirection.y -= gravity * Time.deltaTime;
+            }
+        }
+
+        else
+        {
+            _moveDirection.y -= gravity * Time.deltaTime;
+        }
+
+       
     }
 
 
@@ -234,5 +365,40 @@ public class PlayerController : MonoBehaviour
         isWallJumping= false;
     }
 
+
+    IEnumerator UpWallTimer()                           // Resets the ability to run up walls back to false
+    {                                                   // after 0.5secs    
+        isRuningUpWall= true;                               
+
+        yield return new WaitForSeconds(0.5f);
+        
+        isRuningUpWall= false;
+
+        if(!isWallJumping)
+        {
+            _RunUpWallEnabled = false;
+        }
+       
+    }
+
+    IEnumerator ResetCrouchingState()
+    {
+        yield return new WaitForSeconds(0.05f);
+
+
+        RaycastHit2D hitCeling = Physics2D.CapsuleCast(_capsuleCollider.bounds.center, transform.localScale,
+                                            CapsuleDirection2D.Vertical, 0, Vector2.up, _initialCapsulecolliderSize.y / 2,
+                                            _characterController.layerMask);
+
+        if (!hitCeling.collider)
+        {
+            _capsuleCollider.size = _initialCapsulecolliderSize;
+          //  transform.position = new Vector2(transform.position.x, transform.position.y + (_initialCapsulecolliderSize.y / 4));
+            _spriteRenderer.sprite = Resources.Load<Sprite>("directionSpriteUp");
+            isCrouchingandMoving = false;
+            isCrouching = false;
+
+        }
+    }
 
 }
